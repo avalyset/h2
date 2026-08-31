@@ -265,34 +265,19 @@ def _reject_illegal_characters(headers: Iterable[Header],
         yield header
 
 
-def _validate_nonempty_header_names(headers: Iterable[Header], msg: str) -> Generator[Header, None, None]:
-    """
-    Raises a ProtocolError with the given message if any header name is empty
-    (length 0). While hpack decodes such headers without errors, they are
-    semantically forbidden in HTTP, see RFC 7230, stating that they must be at
-    least one character long.
-    """
-    for header in headers:
-        if len(header[0]) == 0:
-            raise ProtocolError(msg)
-        yield header
-
-
 def _reject_empty_header_names(headers: Iterable[Header],
                                hdr_validation_flags: HeaderValidationFlags) -> Generator[Header, None, None]:
     """
-    Raises a ProtocolError if a header block arrives with an empty header name.
+    Raises a ProtocolError if any header names are empty (length 0).
+    While hpack decodes such headers without errors, they are semantically
+    forbidden in HTTP, see RFC 7230, stating that they must be at least one
+    character long.
     """
-    return _validate_nonempty_header_names(headers, "Received header name with zero length.")
-
-
-def _reject_sent_empty_header_names(headers: Iterable[Header],
-                                    hdr_validation_flags: HeaderValidationFlags) -> Generator[Header, None, None]:
-    """
-    Raises a ProtocolError if we try to send a header block with an empty
-    header name.
-    """
-    return _validate_nonempty_header_names(headers, "Sent header name with zero length.")
+    for header in headers:
+        if len(header[0]) == 0:
+            msg = "Header name with zero length present."
+            raise ProtocolError(msg)
+        yield header
 
 
 def _reject_te(headers: Iterable[Header], hdr_validation_flags: HeaderValidationFlags) -> Generator[Header, None, None]:
@@ -705,7 +690,7 @@ def validate_outbound_headers(headers: Iterable[Header],
     :param headers: The HTTP header set.
     :param hdr_validation_flags: An instance of HeaderValidationFlags.
     """
-    headers = _reject_sent_empty_header_names(
+    headers = _reject_empty_header_names(
         headers, hdr_validation_flags,
     )
     headers = _reject_te(

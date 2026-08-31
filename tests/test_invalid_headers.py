@@ -691,7 +691,7 @@ class TestFilter:
             (b":method", b"GET"),
             (b"", b"foobar"),
         ]
-        with pytest.raises(h2.exceptions.ProtocolError, match=r"Sent header name with zero length\."):
+        with pytest.raises(h2.exceptions.ProtocolError, match=r"Header name with zero length present\."):
             c.send_headers(1, headers)
 
     @pytest.mark.parametrize("hdr_validation_flags", [
@@ -713,7 +713,7 @@ class TestFilter:
         c.receive_data(frame_factory.preamble())
         c.clear_outbound_data_buffer()
 
-        with pytest.raises(h2.exceptions.ProtocolError, match="Received header name with zero length."):
+        with pytest.raises(h2.exceptions.ProtocolError, match=r"Header name with zero length present\."):
             c.receive_data(data)
 
 
