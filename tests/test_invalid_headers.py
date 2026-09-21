@@ -405,6 +405,106 @@ class TestSendingInvalidFrameSequences:
         )
         assert c.data_to_send() == pp_frame.serialize()
 
+    illegal_name_header_blocks = [
+        [*base_request_headers, ("foo bar", "baz")],
+        [*base_request_headers, ("foo\x7f", "bar")],
+        [*base_request_headers, ("foo:bar", "baz")],
+    ]
+
+    @pytest.mark.parametrize("headers", illegal_name_header_blocks)
+    def test_headers_event_illegal_name_characters(self, frame_factory, headers) -> None:
+        """
+        Sending header names containing illegal characters raises a
+        ProtocolError, even though normalization leaves them untouched.
+        """
+        c = h2.connection.H2Connection()
+        c.initiate_connection()
+
+        # Clear the data, then try to send headers.
+        c.clear_outbound_data_buffer()
+        with pytest.raises(h2.exceptions.ProtocolError):
+            c.send_headers(1, headers)
+
+    @pytest.mark.parametrize("headers", illegal_name_header_blocks)
+    def test_send_push_promise_illegal_name_characters(self, frame_factory, headers) -> None:
+        """
+        Sending header names containing illegal characters in a push promise
+        raises a ProtocolError.
+        """
+        c = h2.connection.H2Connection(config=self.server_config)
+        c.initiate_connection()
+        c.receive_data(frame_factory.preamble())
+
+        header_frame = frame_factory.build_headers_frame(
+            self.base_request_headers,
+        )
+        c.receive_data(header_frame.serialize())
+
+        # Clear the data, then try to send a push promise.
+        c.clear_outbound_data_buffer()
+        with pytest.raises(h2.exceptions.ProtocolError):
+            c.push_stream(
+                stream_id=1, promised_stream_id=2, request_headers=headers,
+            )
+
+    @pytest.mark.parametrize("headers", illegal_name_header_blocks)
+    def test_headers_event_illegal_name_characters_skipping_validation(self, frame_factory, headers) -> None:
+        """
+        If we have ``validate_outbound_headers`` disabled, header names
+        containing illegal characters are allowed to pass.
+        """
+        config = h2.config.H2Configuration(
+            validate_outbound_headers=False,
+        )
+
+        c = h2.connection.H2Connection(config=config)
+        c.initiate_connection()
+
+        # Clear the data, then send headers.
+        c.clear_outbound_data_buffer()
+        c.send_headers(1, headers)
+
+        headers = h2.utilities.utf8_encode_headers(headers)
+        norm_headers = h2.utilities.normalize_outbound_headers(
+            headers, None, False,
+        )
+        f = frame_factory.build_headers_frame(norm_headers)
+        assert c.data_to_send() == f.serialize()
+
+    def test_headers_event_uppercase_name_skipping_normalization(self, frame_factory) -> None:
+        """
+        With ``normalize_outbound_headers`` disabled, an uppercase header name
+        is no longer lowercased before validation and is rejected.
+        """
+        config = h2.config.H2Configuration(
+            normalize_outbound_headers=False,
+        )
+
+        c = h2.connection.H2Connection(config=config)
+        c.initiate_connection()
+
+        # Clear the data, then try to send headers.
+        c.clear_outbound_data_buffer()
+        with pytest.raises(h2.exceptions.ProtocolError):
+            c.send_headers(1, [*self.base_request_headers, ("X-Foo", "bar")])
+
+    def test_headers_event_uppercase_name_is_lowercased(self, frame_factory) -> None:
+        """
+        With normalization enabled an uppercase header name is still
+        lowercased and sent, rather than rejected.
+        """
+        c = h2.connection.H2Connection()
+        c.initiate_connection()
+
+        # Clear the data, then send headers.
+        c.clear_outbound_data_buffer()
+        c.send_headers(1, [*self.base_request_headers, ("X-Foo", "bar")])
+
+        f = frame_factory.build_headers_frame(
+            [*self.base_request_headers, ("x-foo", "bar")],
+        )
+        assert c.data_to_send() == f.serialize()
+
     @pytest.mark.parametrize("headers", strippable_header_blocks)
     def test_strippable_headers(self, frame_factory, headers) -> None:
         """
